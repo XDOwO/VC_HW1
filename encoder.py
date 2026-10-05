@@ -132,10 +132,10 @@ def transform_block(block, C=DCT_BASIS):
     #   zigzag:     sequence of 64 integer coefficients in zigzag order
     # When complete, return:
     # return shifted, after_rows, F, QF, zigzag
-    shifted = block - 128
+    shifted = block.astype(np.float64) - 128
     after_rows = shifted @ C.T
     F = C @ after_rows
-    QF = np.round(F / Q).astype(int)
+    QF = np.round(F / Q).astype(np.int32)
     zigzag = QF.flatten()[ZIGZAG]
 
     return shifted, after_rows, F, QF, zigzag
@@ -147,7 +147,18 @@ def encode_block_symbols(zigzag):
     # ("VALUE", v) and ("EOB", None) pairs.  An all-zero block uses only EOB;
     # append EOB only when the last nonzero value is before index 63.
     # When complete, return: symbols
-    raise NotImplementedError("TODO: implement VALUE/EOB symbol sequence")
+    symbols = []
+    flag = False
+    for val in zigzag[::-1]:
+        if val != 0 or flag:
+            flag = True
+            symbols.append(("VALUE", val))
+
+    symbols = symbols[::-1]
+    if zigzag[-1] == 0:
+        symbols.append(("EOB", None))
+    return symbols
+    # raise NotImplementedError("TODO: implement VALUE/EOB symbol sequence")
 
 
 def write_symbol(writer, token, arg):
@@ -156,7 +167,23 @@ def write_symbol(writer, token, arg):
     # s, write VALUE_CODE[s], then write no amplitude bits for s=0, v itself
     # for v>0, or v + (2**s - 1) for v<0.  For EOB, write EOB_CODE.
     # When complete, return: bits
-    raise NotImplementedError("TODO: write VALUE or EOB bits")
+
+    if token == "EOB":
+        code, length = EOB_CODE
+        writer.write_bits(code, length)
+        bits = f"{code:0{length}b}"
+
+    else:
+        s = int(abs(arg)).bit_length()
+        code, length = VALUE_CODE[s]
+        writer.write_bits(code, length)
+        bits = f"{code:0{length}b}"
+        if s > 0:
+            amp = arg if arg > 0 else arg + (2**s - 1)
+            writer.write_bits(amp, s)
+            bits += f"{amp:0{s}b}"
+    return bits
+    # raise NotImplementedError("TODO: write VALUE or EOB bits")
 
 
 def encode(input_png, output_bin, trace=None, block_index=0):
